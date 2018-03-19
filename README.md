@@ -17,7 +17,7 @@ Working on a kind of a small or simple project and looking for a simple and ligh
 * Comments get removed after saving programmatically.
     
     
-## How to use
+## Reading configurations
 Configuration is read the way that 1 line equals 1 configuration entry.
 Configuration entries consist of `key`, `value` and the **assign mark** between them (` = `):
 > key = value
@@ -66,9 +66,12 @@ final byte coolByte = c.getByte("cool_byte");
 final char sampleChar = c.getCharacter("sample_char");
 
 // Output the values
-System.out.printf("%s %s %s %s %s %s", myStr, myNumA, myNumB, myNumC, coolByte, sampleChar);```
+System.out.printf("%s %s %s %s %s %s", myStr, myNumA, myNumB, myNumC, coolByte, sampleChar);
 ```
 
 Output:
+
 `Hello world! 1000 -98471923012831895 3.1415 73 &`
 
+
+## Editing and writing configurations
