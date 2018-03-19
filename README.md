@@ -15,6 +15,10 @@ Working on a kind of a small or simple project and looking for a simple and ligh
 * Key-value split char space dependence (`=` != ` = `);
 * No strict entries order after saving programmatically;
 * Comments get removed after saving programmatically.
+
+
+### Download
+See **[Releases](https://github.com/MeGysssTaa/SimpleConfigs/releases)** for compiled JAR and source code.
     
     
 ## Reading configurations
