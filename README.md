@@ -110,7 +110,7 @@ c.save(new File("E:\\testcfg.txt"));
 c.save("E:\\testcfg.txt");
 ```
 
-The `save` method check is the config hash has updated. If not, this means there are no changes made to the configuration, and so no saving is needed. Nothing will be done in this case. However, if the hash the changed, this means the configuration has been modified and needs to be updated in file. If the given file already exists, it will be deleted. Then a file at the given located (also with the given name) is created, and the configuration is written in it.
+The `save` method checks if the config hash has updated. If not, this means there are no changes made to the configuration, and so no saving is needed. Nothing will be done in this case. However, if the hash the changed, this means the configuration has been modified and needs to be updated in file. If the given file already exists, it will be deleted. Then a file at the given located (also with the given name) is created, and the configuration is written in it.
 
 
 **If you, however, want to save your config to another file and don't want SimpleConfigs to check hashes (so that the config will be saved even if you haven't touched anything in it), you need to use:**
