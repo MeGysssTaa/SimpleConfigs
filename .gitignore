@@ -1,0 +1,12 @@
+*.iml
+*.idea
+out
+.idea
+.iml
+bin
+target
+src/test
+.DS_Store
+back_*
+dependency-reduced-pom.xml
+hexrepl
