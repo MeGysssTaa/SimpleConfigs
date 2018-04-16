@@ -77,7 +77,7 @@ public class Config {
      * @param kv The key-value map to initialize a Config with.
      *           Arguments length must be a multiple of two.
      *           Arguments at even indexes are keys, and those
-     *           at odd ones are values. So a that call like:
+     *           at odd ones are values. So that a call like:
      *               new Config("k1", "v1", "k2", "v2)
      *           will create a Config with two entries:
      *               k1 = v1
