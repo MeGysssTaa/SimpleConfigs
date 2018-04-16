@@ -21,7 +21,9 @@ import me.darksidecode.simpleconfigs.util.Files;
 import me.darksidecode.simpleconfigs.util.Strings;
 
 import java.io.File;
+import java.util.Collection;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
@@ -69,6 +71,32 @@ public class Config {
     private final int initialHash;
 
     /**
+     * Create a new configuration based on the given initial key-value map.
+     * If no key-value map is given, an empty Config with no entries will be created.
+     *
+     * @param kv The key-value map to initialize a Config with.
+     *           Arguments length must be a multiple of two.
+     *           Arguments at even indexes are keys, and those
+     *           at odd ones are values. So a that call like:
+     *               new Config("k1", "v1", "k2", "v2)
+     *           will create a Config with two entries:
+     *               k1 = v1
+     *               k2 = v2
+     * @throws IllegalArgumentException If the length of the given key-value
+     *                                  map is not a multiple of two.
+     */
+    public Config(final String... kv) {
+        if ((kv != null) && (kv.length > 0)) {
+            if ((kv.length % 2) != 0)
+                throw new IllegalArgumentException("Key-value map must be a multiple of two");
+
+            for (int i = 0; i < kv.length; i += 2)
+                config.put(kv[i], kv[i+1]);
+            initialHash = hashCode();
+        } else initialHash = 0; // Init empty config
+    }
+
+    /**
      * Parse config from the given string.
      *
      * @throws NullPointerException If the given string is null
@@ -90,6 +118,22 @@ public class Config {
         }
 
         initialHash = hashCode();
+    }
+
+    /**
+     * Obtain a whole list of all keys this Config has.
+     * @return a whole list of all keys this Config has.
+     */
+    public Set<String> keys() {
+        return config.keySet();
+    }
+
+    /**
+     * Obtain a whole list of all values this Config has.
+     * @return a whole list of all values this Config has.
+     */
+    public Collection<Object> values() {
+        return config.values();
     }
 
     /**
