@@ -21,10 +21,9 @@ import me.darksidecode.simpleconfigs.util.Files;
 import me.darksidecode.simpleconfigs.util.Strings;
 
 import java.io.File;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -45,6 +44,36 @@ public class Config {
      * {key}<ASSIGN_MARK>{value}
      */
     private static final String ASSIGN_MARK = " = ";
+
+    /**
+     * The character sequence that indicates that the value is possibly of type LIST,
+     * that we need to expect the closing CLOSE_LIST_MARK somewhere ahead, and that in
+     * case we find it, all values between OPEN_LIST_MARK and CLOSED_LIST_MARK, splitted
+     * by LIST_SPLIT_MARK, should be added to a LIST, which should be assigned as the value.
+     *
+     * @see Config#CLOSE_LIST_MARK
+     * @see Config#LIST_SPLIT_MARK
+     */
+    private static final String OPEN_LIST_MARK = "[";
+
+    /**
+     * The character sequence that indicates that we have reached the end of a
+     * possible LIST, and that if there was an opening OPEN_LIST_MARK behind, all
+     * values between OPEN_LIST_MARK and CLOSED_LIST_MARK, splitted by LIST_SPLIT_MARK,
+     * should be added to a LIST, which should be assigned as the value.
+     *
+     * @see Config#OPEN_LIST_MARK
+     * @see Config#LIST_SPLIT_MARK
+     */
+    private static final String CLOSE_LIST_MARK = "]";
+
+    /**
+     * The character sequence that splits values in a LIST.
+     *
+     * @see Config#OPEN_LIST_MARK
+     * @see Config#CLOSE_LIST_MARK
+     */
+    private static final String LIST_SPLIT_MARK = Pattern.quote(", ");
 
     /**
      * The minimal length of an entire line.
@@ -90,8 +119,14 @@ public class Config {
             if ((kv.length % 2) != 0)
                 throw new IllegalArgumentException("Key-value map must be a multiple of two");
 
-            for (int i = 0; i < kv.length; i += 2)
-                config.put(kv[i], kv[i+1]);
+            for (int i = 0; i < kv.length; i += 2) {
+                final String val = kv[i+1].trim();
+
+                if ((val.startsWith(OPEN_LIST_MARK)) && (val.endsWith(CLOSE_LIST_MARK)))
+                    config.put(kv[i], parseList(val));
+                else config.put(kv[i], val);
+            }
+
             initialHash = hashCode();
         } else initialHash = 0; // Init empty config
     }
@@ -114,7 +149,12 @@ public class Config {
 
             if (n.length < 2)
                 throw new ConfigFormatException("Not a statement: '" + line + "'");
-            config.put(n[0], Strings.join(1, n, ASSIGN_MARK));
+
+            final String val = Strings.join(1, n, ASSIGN_MARK).trim();
+
+            if ((val.startsWith(OPEN_LIST_MARK)) && (val.endsWith(CLOSE_LIST_MARK)))
+                config.put(n[0], parseList(val));
+            else config.put(n[0], val);
         }
 
         initialHash = hashCode();
@@ -161,12 +201,32 @@ public class Config {
 
     /**
      * Looks up an entry with by the given key and returns its value as String.
-     * 
+     *
      * @param key The key to search by.
      * @return The value of the entry with the given key as String.
      */
     public String getString(final String key) {
         return get(key);
+    }
+
+    /**
+     * Looks up an entry with by the given key and returns its value as String.
+     * If no values are assigned to the key, then the given default String is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getOrSet(String, Object)
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as String.
+     */
+    public String getString(final String key, final String def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getString");
+        return getOrSet(key, def);
     }
 
     /**
@@ -180,6 +240,34 @@ public class Config {
     public Boolean getBoolean(final String key) {
         try {
             return Boolean.valueOf(getString(key));
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a Boolean", ex);
+        }
+    }
+
+    /**
+     * Looks up an entry with by the given key and returns its value as Boolean.
+     * If no values are assigned to the key, then the given default Boolean is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not a Boolean.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as Boolean.
+     */
+    public Boolean getBoolean(final String key, final Boolean def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getBoolean");
+
+        try {
+            return Boolean.valueOf(getString(key, def.toString()));
         } catch (final Exception ex) {
             throw new ConfigFormatException("Value at '" + key + "' is not a Boolean", ex);
         }
@@ -202,6 +290,34 @@ public class Config {
     }
 
     /**
+     * Looks up an entry with by the given key and returns its value as Integer.
+     * If no values are assigned to the key, then the given default Integer is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not an Integer.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as Integer.
+     */
+    public Integer getInteger(final String key, final Integer def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getInteger");
+
+        try {
+            return Integer.valueOf(getString(key, def.toString()));
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a Integer", ex);
+        }
+    }
+
+    /**
      * Looks up an entry with by the given key and returns its value as Short.
      *
      * @param key The key to search by.
@@ -214,6 +330,34 @@ public class Config {
             return Short.valueOf(getString(key));
         } catch (final NumberFormatException nfe) {
             throw new ConfigFormatException("Value at '" + key + "' is not a Short", nfe);
+        }
+    }
+
+    /**
+     * Looks up an entry with by the given key and returns its value as Short.
+     * If no values are assigned to the key, then the given default Short is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not a Short.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as Short.
+     */
+    public Short getShort(final String key, final Short def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getShort");
+
+        try {
+            return Short.valueOf(getString(key, def.toString()));
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a Short", ex);
         }
     }
 
@@ -234,6 +378,34 @@ public class Config {
     }
 
     /**
+     * Looks up an entry with by the given key and returns its value as Long.
+     * If no values are assigned to the key, then the given default Long is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not a Long.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as Long.
+     */
+    public Long getLong(final String key, final Long def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getLong");
+
+        try {
+            return Long.valueOf(getString(key, def.toString()));
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a Long", ex);
+        }
+    }
+
+    /**
      * Looks up an entry with by the given key and returns its value as Byte.
      *
      * @param key The key to search by.
@@ -246,6 +418,34 @@ public class Config {
             return Byte.valueOf(getString(key));
         } catch (final NumberFormatException nfe) {
             throw new ConfigFormatException("Value at '" + key + "' is not a Byte", nfe);
+        }
+    }
+
+    /**
+     * Looks up an entry with by the given key and returns its value as Byte.
+     * If no values are assigned to the key, then the given default Byte is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not a Byte.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as Byte.
+     */
+    public Byte getByte(final String key, final Byte def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getByte");
+
+        try {
+            return Byte.valueOf(getString(key, def.toString()));
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a Byte", ex);
         }
     }
 
@@ -266,6 +466,34 @@ public class Config {
     }
 
     /**
+     * Looks up an entry with by the given key and returns its value as Float.
+     * If no values are assigned to the key, then the given default Float is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not a Float.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as Float.
+     */
+    public Float getFloat(final String key, final Float def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getFloat");
+
+        try {
+            return Float.valueOf(getString(key, def.toString()));
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a Float", ex);
+        }
+    }
+
+    /**
      * Looks up an entry with by the given key and returns its value as Double.
      *
      * @param key The key to search by.
@@ -278,6 +506,34 @@ public class Config {
             return Double.valueOf(getString(key));
         } catch (final NumberFormatException nfe) {
             throw new ConfigFormatException("Value at '" + key + "' is not a Double", nfe);
+        }
+    }
+
+    /**
+     * Looks up an entry with by the given key and returns its value as Double.
+     * If no values are assigned to the key, then the given default Double is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not a Double.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as Double.
+     */
+    public Double getDouble(final String key, final Double def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getDouble");
+
+        try {
+            return Double.valueOf(getString(key, def.toString()));
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a Double", ex);
         }
     }
 
@@ -295,6 +551,96 @@ public class Config {
         } catch (final Exception ex) {
             throw new ConfigFormatException("Value at '" + key + "' is not a Character", ex);
         }
+    }
+
+    /**
+     * Looks up an entry with by the given key and returns its value as Character.
+     * If no values are assigned to the key, then the given default Character is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not a Character.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as Character.
+     */
+    public Character getCharacter(final String key, final Character def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getCharacter");
+
+        try {
+            return getString(key, def.toString()).charAt(0);
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a Character", ex);
+        }
+    }
+
+    /**
+     * Looks up an entry with by the given key and returns its value as List.
+     *
+     * @param key The key to search by.
+     * @throws ConfigFormatException If the value of the found entry is not a List
+     *
+     * @return The value of the entry with the given key as List.
+     */
+    public List getList(final String key) {
+        try {
+            return get(key);
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a List", ex);
+        }
+    }
+
+    /**
+     * Looks up an entry with by the given key and returns its value as List.
+     * If no values are assigned to the key, then the given default List is
+     * returned and assigned.
+     *
+     * @param key The key to search by.
+     * @param def The default value to assign and return in case
+     *            there are no values assigned to the key yet.
+     *
+     * @see Config#getString(String, String)
+     * @see Config#getOrSet(String, Object)
+     *
+     * @throws ConfigFormatException If the value of the found entry is not a List.
+     * @throws NullPointerException If the specified default is null.
+     *
+     * @return The value of the entry with the given key as List.
+     */
+    public List getList(final String key, final List def) {
+        if (def == null)
+            throw new NullPointerException("Def cannot be null for getList");
+
+        try {
+            return getOrSet(key, def);
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Value at '" + key + "' is not a List", ex);
+        }
+    }
+    
+    /**
+     * Attempts to retreive the object located at the given key, if present,
+     * or assigns the given value to the key and returns it otherwise.
+     *
+     * @param key The key to look for values at, or to assign the given default to.
+     * @param def The default value to return and assign to the given key in case
+     *            there are no any values assigned to that key yet.
+     *
+     * @see Map#computeIfAbsent(Object, Function)
+     *
+     * @return the value assigned to the given key. If no values were assigned
+     *         at the beginning of this method execution, then the specified
+     *         default value is returned.
+     */
+    public <T> T getOrSet(final String key, final T def) {
+        return (T) config.computeIfAbsent(key, k -> def);
     }
 
     /**
@@ -366,8 +712,26 @@ public class Config {
     public String toString() {
         final StringBuilder sb = new StringBuilder();
 
-        for (final String key : config.keySet())
-            sb.append(key).append(ASSIGN_MARK).append(config.get(key).toString()).append('\n');
+        for (final String key : config.keySet()) {
+            sb.append(key).append(ASSIGN_MARK);
+            Object val = config.get(key);
+
+            if (val instanceof List) {
+                List list = (List) val;
+                sb.append(OPEN_LIST_MARK);
+
+                if (!(list.isEmpty())) {
+                    for (final Object o : list)
+                        sb.append(o.toString()).append(LIST_SPLIT_MARK);
+                    Strings.deleteTailing(sb, LIST_SPLIT_MARK.length()); // remove unnecessary tailing LIST_SPLIT_MARK
+                }
+
+                sb.append(CLOSE_LIST_MARK);
+            } else sb.append(val.toString());
+
+            sb.append('\n');
+        }
+
         return sb.toString();
     }
 
@@ -443,6 +807,32 @@ public class Config {
         if ((f == null) || (!(f.exists())))
             throw new IllegalArgumentException("No such file: " + ((f == null) ? "<NULL>" : f.getAbsolutePath()));
         return new Config(Files.read(f));
+    }
+
+    /**
+     * Attempts to parse the specified String to a config value of type LIST,
+     * or throws a ConfigFormatException if that's impossible.
+     *
+     * @param s The String to parse a LIST from.
+     *
+     * @throws ConfigFormatException If the given String cannot be parsed to a config
+     *                               value of type LIST properly.
+     * @return List, with all the values the given string is supposed to provide.
+     */
+    private static List parseList(final String s) {
+        try {
+            final String p = s.replace("[", "").replace("]", "");
+            final List list = new ArrayList();
+
+            if (p.isEmpty()) return list; // empty list, e.g. "[]"
+            if (p.contains(LIST_SPLIT_MARK))
+                list.addAll(Arrays.asList(p.split(LIST_SPLIT_MARK)));
+            else list.add(p); // one-value list, e.g. "[value]"
+
+            return list;
+        } catch (final Exception ex) {
+            throw new ConfigFormatException("Cannot parse a LIST from \"" + s + "\"");
+        }
     }
 
 }

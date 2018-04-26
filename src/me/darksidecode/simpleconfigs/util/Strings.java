@@ -24,8 +24,9 @@ public class Strings {
      *
      * @param start The index to start joining from.
      * @param arr The array of strings to join.
-     * @param separator The character or character sequence to put between joined strings
-     * @return
+     * @param separator The character or character sequence to put between joined strings.
+     *
+     * @return The result String.
      */
     public static String join(final int start, final String[] arr, final String separator) {
         final StringBuilder builder = new StringBuilder();
@@ -34,6 +35,28 @@ public class Strings {
         for (int i = 0; i < separator.length(); i++)
             builder.deleteCharAt(builder.length() - 1);
         return builder.toString();
+    }
+
+    /**
+     * Deletes the given number of tailing characters from the specified StringBuilder.
+     * If the desired number of chars to delete is greater than or equal to the actual
+     * length of the given StringBuilder's character sequence, then a new, fresh object
+     * is returned with no String set, as per:
+     *     new StringBuilder()
+     *
+     * @param sb The StringBuilder to delete characters from.
+     * @param chars The number of tailing chars to delete.
+     *
+     * @return a new, empty StringBuilder if the specified number of chars to delete
+     *         was greater than or equal to the length of the given StringBuilder's
+     *         character sequence, or the given StringBuilder with the specified number
+     *         of tailing characters deleted.
+     */
+    public static StringBuilder deleteTailing(final StringBuilder sb, final int chars) {
+        if (chars >= sb.length()) return new StringBuilder();
+        for (int i = 0; i < chars; i++)
+            sb.deleteCharAt(sb.length() - 1);
+        return sb;
     }
 
 }
