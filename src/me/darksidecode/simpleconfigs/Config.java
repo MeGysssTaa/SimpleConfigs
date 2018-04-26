@@ -40,6 +40,11 @@ import java.util.regex.Pattern;
 public class Config {
 
     /**
+     * The API version of this SimpleConfigs release (semantics).
+     */
+    public static final String VERSION = "1.1.0";
+
+    /**
      * The character sequence that splits entries' keys and values:
      * {key}<ASSIGN_MARK>{value}
      */
