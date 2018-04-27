@@ -40,9 +40,13 @@ import java.util.regex.Pattern;
 public class Config {
 
     /**
-     * The API version of this SimpleConfigs release (semantics).
+     * The API version of this SimpleConfigs release in Semantics format X.Y.Z,
+     * where:
+     *     X - major version number;
+     *     Y - minor version number;
+     *     Z - patch number.
      */
-    public static final String VERSION = "1.1.0";
+    public static final String VERSION = "1.2.0";
 
     /**
      * The character sequence that splits entries' keys and values:
@@ -81,6 +85,23 @@ public class Config {
     private static final String LIST_SPLIT_MARK = Pattern.quote(", ");
 
     /**
+     * The character sequence that, being put at the end of line, indicates start of a new secton.
+     */
+    private static final String SECTION_MARK = ":";
+
+    /**
+     * RegEx-escaped version of the section key split character sequence.
+     * Used to extract sections from Strings like `section.subsection.key`.
+     */
+    private static final String SECTION_SPLIT = Pattern.quote(".");
+
+    /**
+     * The number of spaces that should be counted as an indent.
+     * Used when saving and extracting sections by their indents.
+     */
+    private static final int INDENT_SIZE = 4;
+
+    /**
      * The minimal length of an entire line.
      *
      * As entries consist of a key, a value and the assign mark between
@@ -96,7 +117,16 @@ public class Config {
      *     my_key = my_value
      * will result in 'config.put("my_key", my_value)'.
      */
-    private final Map<String, Object> config = new ConcurrentHashMap<>();
+    private final Map<String, Object> config = new LinkedHashMap<>();
+
+    /**
+     * The map of indents to lists of appropriate sections in this Config.
+     * In EasyConfigs, configuration sections are recognized and saved
+     * with use of indents (leading spaces). Each section has its own
+     * indents number, while there can be many sections bound to one
+     * number of indents. Therefore, we use an <Integer, List<String>> map.
+     */
+    private final Map<Integer, List<String>> sections = new HashMap<>();
 
     /**
      * The hash code of this config as it was just after the file has been fully read and parsed.
@@ -118,22 +148,65 @@ public class Config {
      *               k2 = v2
      * @throws IllegalArgumentException If the length of the given key-value
      *                                  map is not a multiple of two.
+     * @throws ConfigFormatException If any of keys or values are invalid.
      */
     public Config(final String... kv) {
         if ((kv != null) && (kv.length > 0)) {
             if ((kv.length % 2) != 0)
-                throw new IllegalArgumentException("Key-value map must be a multiple of two");
+                throw new IllegalArgumentException("Key-value map length must be a multiple of two");
+
+            /*
+
+            FIXME: wrong order element positioning causing invalid save.
+            EXAMPLE:
+                Config c = new Config(
+                    "indep_entry_1", "-10",
+                    "test_section.sub_1.a", "qwe",
+                    "test_section.sub_1.b", "rty",
+                    "test_section.sub_2.a", "uio",
+                    "test_section.sub_2.abc.test_list", "[a, s, d, f, g, h, j]",
+                    "test_section.sub_2.abc.pi", "3.14",
+                    "test_section.x0_formula", "-b/2a",
+                    "test_section.sub_2.test_list", "[3, 7, -2, 9, -5]",
+                    "test_section.sub_2.wrong_ordered_long", "387561823791519815",
+                    "indep_entry_2", "-9",
+                    "indep_entry_3", "-8",
+                    "test_section.sub_1.hello", "world"
+                );
+             */
 
             for (int i = 0; i < kv.length; i += 2) {
-                final String val = kv[i+1].trim();
+                final String key = kv[i].trim().replace("\t", "    ");
+                final String indentReducedKey = key.replace(" ", "");
 
+                if (indentReducedKey.isEmpty())
+                    throw new ConfigFormatException("Key cannot be empty");
+
+                // The entry is inside a section or a subsection. In order to make this
+                // Config saveable, we need to ensure all the sections are registered.
+                if (key.contains(".")) {
+                    final String[] parent = key.split(SECTION_SPLIT);
+
+                    for (int j = 0; j < (parent.length - 1); j++) {
+                        final List<String> bound = sections.computeIfAbsent(j * INDENT_SIZE, k -> new ArrayList<>());
+                        final String p = parent[j];
+
+                        if (!(bound.contains(p))) bound.add(p); // avoid duplicates
+                    }
+                }
+
+                final String val = kv[i+1].trim().replace("\t", "    ");
+                final String indentReducedVal = val.replace(" ", "");
+
+                if (indentReducedVal.isEmpty())
+                    throw new ConfigFormatException("Value cannot be empty");
                 if ((val.startsWith(OPEN_LIST_MARK)) && (val.endsWith(CLOSE_LIST_MARK)))
-                    config.put(kv[i], parseList(val));
-                else config.put(kv[i], val);
+                    config.put(key, parseList(val));
+                else config.put(key, val);
             }
 
             initialHash = hashCode();
-        } else initialHash = 0; // Init empty config
+        } else initialHash = 0; // init empty config
     }
 
     /**
@@ -145,21 +218,101 @@ public class Config {
      * @param s the string to parse configuration from.
      */
     public Config(final String s) {
-        if (s == null) throw new NullPointerException("Cannot parse config from null string");
+        if (s == null)
+            throw new NullPointerException("Cannot parse config from null string");
+
+        StringBuilder currentSection = new StringBuilder(); // holds the current section or subsection name
+        int currentIndent = 0; // holds the current section or subsection number of indents
+
         for (String line : s.split(Compatibility.getLineBreak())) {
-            if ((line.startsWith("#")) || (line.length() < MIN_ENTRY_LEN))
+            line = line.replace("\t", "    "); // replace tabs with four spaces
+            String indentReduced = line.replace(" ", "");
+
+            // A comment or an empty line
+            if ((indentReduced.startsWith("#")) || (indentReduced.length() < 2))
                 continue;
 
-            final String[] n = line.split(ASSIGN_MARK);
+            String trimmed = line.trim(); // remove any leading and tailing spaces
 
-            if (n.length < 2)
-                throw new ConfigFormatException("Not a statement: '" + line + "'");
+            // This is a new section declaration, e.g. `section:`
+            if (indentReduced.endsWith(SECTION_MARK)) {
+                // Count the number of leading spaces
+                int indent = 0;
 
-            final String val = Strings.join(1, n, ASSIGN_MARK).trim();
+                for (final char c : line.toCharArray()) {
+                    if (c != ' ')
+                        break;
+                    indent += 1;
+                }
 
-            if ((val.startsWith(OPEN_LIST_MARK)) && (val.endsWith(CLOSE_LIST_MARK)))
-                config.put(n[0], parseList(val));
-            else config.put(n[0], val);
+                if ((indent % INDENT_SIZE) != 0)
+                    throw new ConfigFormatException("Indent size must be a multiple of " + INDENT_SIZE);
+
+                // Reached end of section
+                if (indent < currentIndent) {
+                    if ((indent == 0) || (currentSection.indexOf(".") == -1))
+                        currentSection = new StringBuilder();
+                    else {
+                        String[] parent = currentSection.toString().split(SECTION_SPLIT);
+                        currentSection = new StringBuilder(Strings.join(0,
+                                Arrays.copyOf(parent, indent/INDENT_SIZE) , "."));
+                    }
+                }
+
+                final String section = trimmed.substring(0, trimmed.length() - SECTION_MARK.length());
+
+                sections.computeIfAbsent(indent, k -> new ArrayList<>()).add(section);
+                currentSection.append((currentSection.length() == 0) ? section : "." + section);
+
+                currentIndent = indent;
+            } else {
+                // Empty line
+                if (trimmed.length() < MIN_ENTRY_LEN)
+                    continue;
+
+                // Count the number of leading spaces
+                int indent = 0;
+
+                for (final char c : line.toCharArray()) {
+                    if (c != ' ')
+                        break;
+                    indent += 1;
+                }
+
+                if ((indent % INDENT_SIZE) != 0)
+                    throw new ConfigFormatException("Indent size must be a multiple of " + INDENT_SIZE);
+
+                // Reached end of section
+                if (indent < currentIndent) {
+                    if ((indent == 0) || (currentSection.indexOf(".") == -1))
+                        currentSection = new StringBuilder();
+                    else {
+                        String[] parent = currentSection.toString().split(SECTION_SPLIT);
+                        currentSection = new StringBuilder(Strings.join(0,
+                                Arrays.copyOf(parent, indent/INDENT_SIZE) , "."));
+                    }
+                }
+
+                final String[] n = trimmed.split(ASSIGN_MARK);
+
+                // Format is not `K = V`
+                if (n.length < 2)
+                    throw new ConfigFormatException("Not a statement: '" + trimmed + "'");
+
+                // If this config entry is inside a section or a subsection, then the names
+                // of all its parents are added as a prefix, splitted with a dot ('.').
+                final String prefix = (currentSection.length() == 0) ? "" : currentSection + ".";
+
+                final String key = prefix + n[0];
+                final String val = Strings.join(1, n, ASSIGN_MARK).trim();
+
+                // This entry is of type LIST
+                if ((val.startsWith(OPEN_LIST_MARK)) && (val.endsWith(CLOSE_LIST_MARK)))
+                    config.put(key, parseList(val));
+                else config.put(key, val);
+
+                currentIndent = indent;
+            }
         }
 
         initialHash = hashCode();
@@ -715,12 +868,53 @@ public class Config {
      */
     @Override
     public String toString() {
+        final Set<String> initializedSections = new HashSet<>(); // holds set of sections or subsections which don't need init
         final StringBuilder sb = new StringBuilder();
 
-        for (final String key : config.keySet()) {
-            sb.append(key).append(ASSIGN_MARK);
+        for (String key : config.keySet()) {
+            // This config entry is inside a section or a subsection
+            if (key.contains(".")) {
+                final String[] parent = key.split(SECTION_SPLIT);
+                final int indents = INDENT_SIZE * parent.length;
+
+                for (int i = 0; i < (parent.length - 1); i++) {
+                    final String section = parent[i];
+
+                    // Declare section with `section_name:` if needed
+                    if (!(initializedSections.contains(section))) {
+                        int sectionIndent = -1;
+
+                        // Find the number of indents we need to add for this section/subsection
+                        for (final int ind : sections.keySet()) {
+                            for (final String s : sections.get(ind)) {
+                                if (s.equals(section)) {
+                                    sectionIndent = ind;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (sectionIndent == -1)
+                            throw new ConfigFormatException("No indent for configuration section \"" + section + "\"");
+                        for (int j = 0; j < sectionIndent; j++)
+                            sb.append(' ');
+                        sb.append(section).append(SECTION_MARK).append('\n');
+                        initializedSections.add(section);
+                    }
+                }
+
+                final StringBuilder indent = new StringBuilder();
+
+                for (int i = 0; i < (indents - INDENT_SIZE); i++)
+                    indent.append(' ');
+                sb.append(indent.toString());
+                sb.append(parent[parent.length - 1]);
+            } else sb.append(key); // this is an independent configuration entry not bound to any sections or subsections
+
+            sb.append(ASSIGN_MARK);
             Object val = config.get(key);
 
+            // This is a LIST value (`[a, b, c]`)
             if (val instanceof List) {
                 List list = (List) val;
                 sb.append(OPEN_LIST_MARK);
@@ -732,7 +926,7 @@ public class Config {
                 }
 
                 sb.append(CLOSE_LIST_MARK);
-            } else sb.append(val.toString());
+            } else sb.append(val.toString()); // this is a normal value (`a`)
 
             sb.append('\n');
         }
@@ -829,7 +1023,7 @@ public class Config {
             final String p = s.replace("[", "").replace("]", "");
             final List list = new ArrayList();
 
-            if (p.isEmpty()) return list; // empty list, e.g. "[]"
+            if (p.isEmpty()) return list; // empty list, i.e. "[]"
             if (p.contains(LIST_SPLIT_MARK))
                 list.addAll(Arrays.asList(p.split(LIST_SPLIT_MARK)));
             else list.add(p); // one-value list, e.g. "[value]"
