@@ -22,7 +22,6 @@ import me.darksidecode.simpleconfigs.util.Strings;
 
 import java.io.File;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -46,7 +45,7 @@ public class Config {
      *     Y - minor version number;
      *     Z - patch number.
      */
-    public static final String VERSION = "1.2.0";
+    public static final String VERSION = "1.2.1";
 
     /**
      * The character sequence that splits entries' keys and values:
@@ -217,15 +216,21 @@ public class Config {
      *
      * @param s the string to parse configuration from.
      */
-    public Config(final String s) {
+    public Config(String s) {
         if (s == null)
             throw new NullPointerException("Cannot parse config from null string");
+
+        // Cross-platform line break/feed compatibility. We don't care which
+        // formatting to use at reading, so let's just stop at UNIX.
+        s = Compatibility.formatUNIX(s);
 
         StringBuilder currentSection = new StringBuilder(); // holds the current section or subsection name
         int currentIndent = 0; // holds the current section or subsection number of indents
 
-        for (String line : s.split(Compatibility.getLineBreak())) {
+        for (String line : s.split(Compatibility.UNIX_LINE)) {
             line = line.replace("\t", "    "); // replace tabs with four spaces
+            line = line.replace("\u0000", ""); // replace invalid null character appearing from nowhere \(._.)/
+
             String indentReduced = line.replace(" ", "");
 
             // A comment or an empty line
@@ -871,6 +876,9 @@ public class Config {
         final Set<String> initializedSections = new HashSet<>(); // holds set of sections or subsections which don't need init
         final StringBuilder sb = new StringBuilder();
 
+        // Break lines with a character sequence specific for the current system
+        final String lineBreak = Compatibility.getLineBreak();
+
         for (String key : config.keySet()) {
             // This config entry is inside a section or a subsection
             if (key.contains(".")) {
@@ -898,7 +906,7 @@ public class Config {
                             throw new ConfigFormatException("No indent for configuration section \"" + section + "\"");
                         for (int j = 0; j < sectionIndent; j++)
                             sb.append(' ');
-                        sb.append(section).append(SECTION_MARK).append('\n');
+                        sb.append(section).append(SECTION_MARK).append(lineBreak);
                         initializedSections.add(section);
                     }
                 }
@@ -928,7 +936,7 @@ public class Config {
                 sb.append(CLOSE_LIST_MARK);
             } else sb.append(val.toString()); // this is a normal value (`a`)
 
-            sb.append('\n');
+            sb.append(lineBreak);
         }
 
         return sb.toString();

@@ -22,6 +22,21 @@ package me.darksidecode.simpleconfigs.util;
 public class Compatibility {
 
     /**
+     * Line break character sequence used on Windows.
+     */
+    public static final String WINDOWS_LINE = "\r\n";
+
+    /**
+     * Line break character sequence used on UNIX.
+     */
+    public static final String UNIX_LINE = "\n";
+
+    /**
+     * Line break character sequence used on Mac.
+     */
+    public static final String MAC_LINE = "\r";
+
+    /**
      * Returns the line breaking character or character sequence for the current platform
      * @return the line breaking character or character sequence for the current platform
      */
@@ -30,12 +45,22 @@ public class Compatibility {
     }
 
     /**
+     * Replaces all WIN and MAC line break character sequences with the UNIX one.
+     *
+     * @param s The string to format.
+     * @return The given string, with all lines formatted to match the UNIX line break format.
+     */
+    public static String formatUNIX(final String s) {
+        return s.replace(WINDOWS_LINE, UNIX_LINE).replace(MAC_LINE, UNIX_LINE);
+    }
+
+    /**
      * Platform utilities...
      */
     public enum OS {
-        WINDOWS ("\r\n"),
-        LINUX   (  "\n"),
-        MAC     (  "\r");
+        WINDOWS (WINDOWS_LINE),
+        LINUX   (   UNIX_LINE),
+        MAC     (    MAC_LINE);
 
         /**
          * Current platform cache. Used to avoid performing
