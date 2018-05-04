@@ -45,7 +45,7 @@ public class Config {
      *     Y - minor version number;
      *     Z - patch number.
      */
-    public static final String VERSION = "1.2.1";
+    public static final String VERSION = "1.2.2";
 
     /**
      * The character sequence that splits entries' keys and values:
@@ -752,7 +752,7 @@ public class Config {
      *
      * @return The value of the entry with the given key as List.
      */
-    public List getList(final String key) {
+    public List<String> getList(final String key) {
         try {
             return get(key);
         } catch (final Exception ex) {
@@ -777,7 +777,7 @@ public class Config {
      *
      * @return The value of the entry with the given key as List.
      */
-    public List getList(final String key, final List def) {
+    public List<String> getList(final String key, final List<String> def) {
         if (def == null)
             throw new NullPointerException("Def cannot be null for getList");
 
@@ -924,7 +924,7 @@ public class Config {
 
             // This is a LIST value (`[a, b, c]`)
             if (val instanceof List) {
-                List list = (List) val;
+                List<String> list = (List<String>) val;
                 sb.append(OPEN_LIST_MARK);
 
                 if (!(list.isEmpty())) {
@@ -1026,10 +1026,10 @@ public class Config {
      *                               value of type LIST properly.
      * @return List, with all the values the given string is supposed to provide.
      */
-    private static List parseList(final String s) {
+    private static List<String> parseList(final String s) {
         try {
             final String p = s.replace("[", "").replace("]", "");
-            final List list = new ArrayList();
+            final List<String> list = new ArrayList();
 
             if (p.isEmpty()) return list; // empty list, i.e. "[]"
             if (p.contains(LIST_SPLIT_MARK))
